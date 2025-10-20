@@ -4,6 +4,8 @@
 #include<cstring>
 #include<string>
 #include<chrono>
+#include<vector>
+#include<commdlg.h>  // For file dialog
 
 #include <imgui/imgui.h>
 #include <imgui/imgui_impl_dx11.h>
@@ -13,7 +15,146 @@
 #include "ProcessManager.h" // Include our process manager
 #include "MemoryManager.h" // Include our memory manager
 
- extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
+
+// Structure to hold dynamic image data
+struct DynamicImageData {
+    DX11ImageTexture texture;
+    std::wstring path;
+    bool isLoaded = false;
+    char pathInputBuffer[512] = {};
+
+    DynamicImageData() = default;
+    DynamicImageData(const std::wstring& imagePath) : path(imagePath) {
+        // Convert wide string to multibyte for input buffer
+        WideCharToMultiByte(CP_UTF8, 0, imagePath.c_str(), -1, pathInputBuffer, sizeof(pathInputBuffer), nullptr, nullptr);
+    }
+};
+
+// Helper function to display dynamic image manager tab
+void DisplayImageManagerTab(std::vector<DynamicImageData>& images, ID3D11Device* device) {
+    ImGui::Text("Dynamic Image Manager");
+    ImGui::Separator();
+    
+    // Controls for managing image count
+    ImGui::Text("Number of Images: %zu", images.size());
+    
+    if (ImGui::Button("Add New Image Slot")) {
+        images.emplace_back();
+    }
+    
+    ImGui::SameLine();
+    if (ImGui::Button("Remove Last Image") && !images.empty()) {
+        images.pop_back();
+    }
+    
+    ImGui::Separator();
+    
+    // Display each image slot
+    for (size_t i = 0; i < images.size(); ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        
+        char slotName[64];
+        sprintf_s(slotName, "Image Slot %zu", i + 1);
+        
+        if (ImGui::CollapsingHeader(slotName, ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Path input
+            ImGui::Text("Image Path:");
+            if (ImGui::InputText("##Path", images[i].pathInputBuffer, sizeof(images[i].pathInputBuffer))) {
+                // Convert multibyte to wide string
+                int wideSize = MultiByteToWideChar(CP_UTF8, 0, images[i].pathInputBuffer, -1, nullptr, 0);
+                if (wideSize > 0) {
+                    std::wstring widePath(wideSize, L'\0');
+                    MultiByteToWideChar(CP_UTF8, 0, images[i].pathInputBuffer, -1, &widePath[0], wideSize);
+                    images[i].path = widePath;
+                    images[i].path.pop_back(); // Remove null terminator
+                }
+            }
+            
+            ImGui::SameLine();
+            if (ImGui::Button("Browse...")) {
+                // Open file dialog
+                OPENFILENAMEW ofn = {};
+                wchar_t szFile[512] = L"";
+                
+                ofn.lStructSize = sizeof(ofn);
+                ofn.lpstrFile = szFile;
+                ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
+                ofn.lpstrFilter = L"Image Files\0*.jpg;*.jpeg;*.png;*.bmp;*.gif;*.tiff;*.tif\0All Files\0*.*\0";
+                ofn.nFilterIndex = 1;
+                ofn.lpstrFileTitle = nullptr;
+                ofn.nMaxFileTitle = 0;
+                ofn.lpstrInitialDir = nullptr;
+                ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+                
+                if (GetOpenFileNameW(&ofn)) {
+                    images[i].path = szFile;
+                    // Convert wide string to multibyte for input buffer
+                    WideCharToMultiByte(CP_UTF8, 0, images[i].path.c_str(), -1, 
+                                      images[i].pathInputBuffer, sizeof(images[i].pathInputBuffer), nullptr, nullptr);
+                }
+            }
+            
+            // Load/Reload button
+            if (ImGui::Button("Load Image")) {
+                if (!images[i].path.empty()) {
+                    images[i].isLoaded = images[i].texture.LoadFromFile(device, images[i].path.c_str());
+                }
+            }
+            
+            ImGui::SameLine();
+            if (ImGui::Button("Clear")) {
+                images[i].texture.Release();
+                images[i].isLoaded = false;
+                images[i].path.clear();
+                images[i].pathInputBuffer[0] = '\0';
+            }
+            
+            // Status and display
+            if (images[i].isLoaded && images[i].texture.IsValid()) {
+                ImGui::TextColored(ImVec4(0, 1, 0, 1), "✓ Image loaded successfully");
+                ImGui::Text("Dimensions: %dx%d", images[i].texture.width, images[i].texture.height);
+                
+                // Display options
+                static int displayMode = 0;
+                ImGui::Text("Display Size:");
+                ImGui::RadioButton("Small (200x200)", &displayMode, 0); ImGui::SameLine();
+                ImGui::RadioButton("Medium (400x400)", &displayMode, 1); ImGui::SameLine();
+                ImGui::RadioButton("Large (600x600)", &displayMode, 2);
+                
+                ImVec2 imageSize;
+                switch (displayMode) {
+                    case 0: imageSize = ImVec2(200, 200); break;
+                    case 1: imageSize = ImVec2(400, 400); break;
+                    case 2: imageSize = ImVec2(600, 600); break;
+                    default: imageSize = ImVec2(200, 200); break;
+                }
+                
+                ImGui::Image(images[i].texture.GetImGuiTextureID(), imageSize);
+                
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Original size: %dx%d\nClick to cycle sizes", 
+                                    images[i].texture.width, images[i].texture.height);
+                    if (ImGui::IsItemClicked()) {
+                        displayMode = (displayMode + 1) % 3;
+                    }
+                }
+            } else if (!images[i].path.empty()) {
+                ImGui::TextColored(ImVec4(1, 0, 0, 1), "✗ Failed to load image");
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1), "Path: %s", images[i].pathInputBuffer);
+            } else {
+                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1), "No image path set");
+            }
+        }
+        
+        ImGui::PopID();
+        ImGui::Separator();
+    }
+    
+    if (images.empty()) {
+        ImGui::TextColored(ImVec4(1, 1, 0, 1), "No image slots available. Click 'Add New Image Slot' to start.");
+    }
+}
 
 // Helper function to display an image tab
 void DisplayImageTab(DX11ImageTexture& image, const wchar_t* imagePath, bool& isLoaded, ID3D11Device* device) {
@@ -691,7 +832,8 @@ int APIENTRY WinMain(_In_ HINSTANCE instence, _In_opt_ HINSTANCE, _In_ PSTR, _In
 		return 1;
 	}
 
-	ShowWindow(window, cmd_show);
+	// Initialize with window hidden by default - F2 will show it
+	ShowWindow(window, SW_HIDE);
 	UpdateWindow(window);
 
 	ImGui::CreateContext(); //create ImGui context
@@ -704,39 +846,36 @@ int APIENTRY WinMain(_In_ HINSTANCE instence, _In_opt_ HINSTANCE, _In_ PSTR, _In
 	static ProcessManager processManager;
 	static MemoryManager memoryManager(processManager);
 
-	// Load an example image with better error handling
+	// Initialize dynamic image system - start with a few empty slots
+	static std::vector<DynamicImageData> dynamicImages;
+	// Add some default image slots to start with
+	dynamicImages.emplace_back(L"");
+	dynamicImages.emplace_back(L"");
+	dynamicImages.emplace_back(L"");
+
+	// Legacy image system for backward compatibility (can be removed later)
 	static DX11ImageTexture birdImage;
-	bool imageLoadSuccess = birdImage.LoadFromFile(device, L"C:\\Users\\Arshia\\Downloads\\bird ballsjpg.jpg");
-
-	constexpr uint8_t maxImages = 4; // set the numebr of max images
-
-	// Additional images for testing (add more if you have them)
-	static DX11ImageTexture testImages[maxImages]; // Changed from [3] to [4]
-	static const wchar_t* imagePaths[maxImages] = { // Changed from [3] to [4]
+	constexpr uint8_t maxImages = 4;
+	static DX11ImageTexture testImages[maxImages];
+	static const wchar_t* imagePaths[maxImages] = {
 		L"C:\\Users\\Arshia\\Downloads\\bird ballsjpg.jpg",
 		L"C:\\Windows\\Web\\Wallpaper\\Windows\\img0.jpg",
 		L"C:\\Users\\Arshia\\Downloads\\ap24195803307155.jpg",
 		L"C:\\Users\\Arshia\\Downloads\\pony.png",
 	};
-	static bool imagesLoaded[maxImages] = { false, false, false, false }; 
-	// Try loading the bird image
+	static bool imagesLoaded[maxImages] = { false, false, false, false };
+
+	// Try loading legacy images
 	imagesLoaded[0] = birdImage.LoadFromFile(device, imagePaths[0]);
-	
-	// Try loading additional test images
-	for (int i = 1; i < maxImages; i++) { // Changed from < 3 to < 4
+	for (int i = 1; i < maxImages; i++) {
 		imagesLoaded[i] = testImages[i].LoadFromFile(device, imagePaths[i]);
 	}
-	
-	// Debug info for image loading
-	if (imageLoadSuccess) {
-		// Image loaded successfully
-	} else {
-		// Image failed to load - we'll show an error message in the UI
-	}
 
-	// Overlay interaction mode control
-	bool isClickThrough = false; // Start in interactive mode
+	// Overlay interaction and visibility control
+	bool isClickThrough = false;
 	bool toggleKeyPressed = false;
+	bool overlayVisible = false; // Start hidden
+	bool f2KeyPressed = false;
 
 	bool running = true;
 
@@ -753,7 +892,24 @@ int APIENTRY WinMain(_In_ HINSTANCE instence, _In_opt_ HINSTANCE, _In_ PSTR, _In
 			break; //break out of loop
 		}
 
-		 // Check for toggle hotkey (F1 key) to switch between interactive and click-through modes
+		// Check for F2 key to toggle overlay visibility
+		bool f2KeyDown = GetAsyncKeyState(VK_F2) & 0x8000;
+		if (f2KeyDown && !f2KeyPressed) {
+			overlayVisible = !overlayVisible;
+			ShowWindow(window, overlayVisible ? SW_SHOW : SW_HIDE);
+			f2KeyPressed = true;
+		} else if (!f2KeyDown) {
+			f2KeyPressed = false;
+		}
+
+		// Only process other input and rendering if overlay is visible
+		if (!overlayVisible) {
+			// Sleep briefly to reduce CPU usage when hidden
+			Sleep(50);
+			continue;
+		}
+
+		// Check for F1 key to toggle click-through mode (only when visible)
 		bool f1KeyDown = GetAsyncKeyState(VK_F1) & 0x8000;
 		if (f1KeyDown && !toggleKeyPressed) {
 			isClickThrough = !isClickThrough;
@@ -761,10 +917,8 @@ int APIENTRY WinMain(_In_ HINSTANCE instence, _In_opt_ HINSTANCE, _In_ PSTR, _In
 			// Update window properties based on mode
 			LONG_PTR currentExStyle = GetWindowLongPtrW(window, GWL_EXSTYLE);
 			if (isClickThrough) {
-				// Make window click-through
 				SetWindowLongPtrW(window, GWL_EXSTYLE, currentExStyle | WS_EX_TRANSPARENT);
 			} else {
-				// Make window interactive
 				SetWindowLongPtrW(window, GWL_EXSTYLE, currentExStyle & ~WS_EX_TRANSPARENT);
 			}
 			
@@ -778,11 +932,17 @@ int APIENTRY WinMain(_In_ HINSTANCE instence, _In_opt_ HINSTANCE, _In_ PSTR, _In
 
 		ImGui::NewFrame(); //start new ImGui frame
 
-		// --- Start rendering your ImGui widgets or custom drawing here ---
+		// Main overlay window
 		ImGui::Begin("Image Overlay", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
 		
-		 // Display current overlay mode and instructions
-		ImGui::TextColored(ImVec4(1, 1, 0, 1), "Overlay Mode:");
+		// Display overlay controls and status
+		ImGui::TextColored(ImVec4(1, 1, 0, 1), "Overlay Controls:");
+		ImGui::TextColored(ImVec4(0, 1, 1, 1), "Press F2 to hide/show overlay");
+		ImGui::TextColored(ImVec4(1, 1, 1, 0.7f), "Press F1 to toggle click-through mode");
+		
+		// Display current overlay mode
+		ImGui::Separator();
+		ImGui::TextColored(ImVec4(1, 1, 0, 1), "Current Mode:");
 		if (isClickThrough) {
 			ImGui::TextColored(ImVec4(0, 1, 1, 1), "🔄 Click-Through Mode");
 			ImGui::Text("Mouse input passes through to applications below");
@@ -790,48 +950,56 @@ int APIENTRY WinMain(_In_ HINSTANCE instence, _In_opt_ HINSTANCE, _In_ PSTR, _In
 			ImGui::TextColored(ImVec4(0, 1, 0, 1), "🖱️ Interactive Mode");
 			ImGui::Text("You can click and interact with this overlay");
 		}
-		ImGui::TextColored(ImVec4(1, 1, 1, 0.7f), "Press F1 to toggle between modes");
 		ImGui::Separator();
 		
-		// Image selection tabs
+		// Main tab bar
 		if (ImGui::BeginTabBar("MainTabs")) {
+			// Dynamic Image Manager tab (new primary feature)
+			if (ImGui::BeginTabItem("Dynamic Images")) {
+				DisplayImageManagerTab(dynamicImages, device);
+				ImGui::EndTabItem();
+			}
+			
 			// Memory Editor tab
 			if (ImGui::BeginTabItem("Memory Editor")) {
 				DisplayMemoryEditorTab(processManager, memoryManager);
 				ImGui::EndTabItem();
 			}
 			
-			// Bird image tab
-			if (ImGui::BeginTabItem("Bird Image")) {
-				DisplayImageTab(birdImage, imagePaths[0], imagesLoaded[0], device);
-				ImGui::EndTabItem();
-			}
-			
-			// Test images tabs
-			for (int i = 1; i < maxImages; i++) {
-				wchar_t tabName[64];
-				wsprintf(tabName, L"Test Image %d", i);
-				char tabNameA[64];
-				WideCharToMultiByte(CP_UTF8, 0, tabName, -1, tabNameA, sizeof(tabNameA), nullptr, nullptr);
+			// Legacy image tabs (for backward compatibility)
+			if (ImGui::BeginTabItem("Legacy Images")) {
+				ImGui::TextColored(ImVec4(1, 1, 0, 1), "Legacy Image System (Deprecated)");
+				ImGui::Text("These are hardcoded images. Use 'Dynamic Images' tab for custom images.");
+				ImGui::Separator();
 				
-				if (ImGui::BeginTabItem(tabNameA)) {
-					DisplayImageTab(testImages[i], imagePaths[i], imagesLoaded[i], device);
-					ImGui::EndTabItem();
+				if (ImGui::BeginTabBar("LegacyImageTabs")) {
+					if (ImGui::BeginTabItem("Bird Image")) {
+						DisplayImageTab(birdImage, imagePaths[0], imagesLoaded[0], device);
+						ImGui::EndTabItem();
+					}
+					
+					for (int i = 1; i < maxImages; i++) {
+						wchar_t tabName[64];
+						wsprintf(tabName, L"Test Image %d", i);
+						char tabNameA[64];
+						WideCharToMultiByte(CP_UTF8, 0, tabName, -1, tabNameA, sizeof(tabNameA), nullptr, nullptr);
+						
+						if (ImGui::BeginTabItem(tabNameA)) {
+							DisplayImageTab(testImages[i], imagePaths[i], imagesLoaded[i], device);
+							ImGui::EndTabItem();
+						}
+					}
+					ImGui::EndTabBar();
 				}
+				ImGui::EndTabItem();
 			}
 			
 			ImGui::EndTabBar();
 		}
 		
 		ImGui::End();
-		
-		// Memory editor tab
-		ImGui::Begin("Memory Editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-		DisplayMemoryEditorTab(processManager, memoryManager);
-		ImGui::End();
-		
-		// --- End of your rendering code ---
 
+		// Render
 		ImGui::Render();
 
 		// Clear with fully transparent black for overlay transparency

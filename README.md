@@ -1,6 +1,7 @@
 # External Overlay
 
 A Windows overlay application built with C++ using Dear ImGui and DirectX 11.
+This application allows user to manipulate the amount of runes in Elden Ring.
 
 ## Features
 
@@ -9,6 +10,9 @@ A Windows overlay application built with C++ using Dear ImGui and DirectX 11.
 - ImGui integration for UI elements
 - Topmost window positioning
 - Layered window attributes for transparency
+- the ability to make textures out of images and display them on the overlay
+- simple memory manipulation functions to read and write process memory
+- the ability to find dynamic memory addresses using pointer chains and changhing the value at those addresses
 
 ## Technologies Used
 

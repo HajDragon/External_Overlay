@@ -57,21 +57,23 @@ The overlay now features a comprehensive dynamic image management system:
 - **WIC (Windows Imaging Component)** - Image loading and format support
 
 ## Project Structure
+
 External_Overlay/
-??? src/
-?   ??? main.cpp           # Main application entry point with dynamic image system
-?   ??? ImageTexture.h     # Image loading and texture management header
-?   ??? ImageTexture.cpp   # Image loading implementation
-?   ??? ProcessManager.h   # Process attachment and management header  
-?   ??? ProcessManager.cpp # Process management implementation
-?   ??? MemoryManager.h    # Memory manipulation header
-?   ??? MemoryManager.cpp  # Memory reading/writing implementation
-?   ??? memory.h           # Legacy memory utilities
-?   ??? vector.h           # Vector utilities
-??? external/
-?   ??? imgui/             # Dear ImGui library files
-??? build/                 # Build outputs (ignored by git)
-??? External_Overlay.*     # Visual Studio project files
+├── src/
+│   ├── main.cpp             # Main application entry point with dynamic image system
+│   ├── ImageTexture.h       # Image loading and texture management header
+│   ├── ImageTexture.cpp     # Image loading implementation
+│   ├── ProcessManager.h     # Process attachment and management header
+│   ├── ProcessManager.cpp   # Process management implementation
+│   ├── MemoryManager.h      # Memory manipulation header
+│   ├── MemoryManager.cpp    # Memory reading/writing implementation
+│   ├── memory.h             # Legacy memory utilities
+│   └── vector.h             # Vector utilities
+├── external/
+│   └── imgui/               # Dear ImGui library files
+├── build/                   # Build outputs (ignored by git)
+├── External_Overlay.*       # Visual Studio project files
+
 ## Building
 
 This project is configured for Visual Studio 2022 with C++20 support.

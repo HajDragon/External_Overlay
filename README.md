@@ -91,7 +91,7 @@ This project is configured for Visual Studio 2022 with C++20 support.
 2. Connect to target processes (like Elden Ring)
 3. Read and modify memory values
 4. Use preset actions or custom value inputs
-5. Note than due to Address Space Layout Randomization, each time that you utilize a program, the adress for a specific value would be diffrent.
+5. Note that due to Address Space Layout Randomization, each time that you utilize a program, the adress for a specific value would be diffrent.
    you either have to find the correct adress of your varibale each time you launch it or find a static pointer for that adress.
    both can be done using cheat engine but due to the time taking and complex nature of it, i wont be covering it here.
 
